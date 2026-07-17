@@ -26,10 +26,12 @@ touch a browser when you say so. One step at a time.
      last 30 days of recovery, sleep, HRV, resting HR and strain, and write
      them into tiles/data/vitals.json (the feed shape is declared in the
      tile's header - read it, never guess).
-   - If it has an API instead, walk me through getting my own token, store it
-     in .env.local (gitignored, never committed), and write a small fetch
-     script into automation/ that fills the same feed. Wire it into the
-     morning workflow if my board has one.
+   - If it has an API instead, follow vitals/API.md in this repo: Oura is a
+     two-minute static token (adapter ships here, cloud-safe); WHOOP is your
+     own developer app + one handshake (adapter ships here, runs on my
+     machine because WHOOP rotates tokens). Any other band: map it into the
+     same six numbers per day, per the guide. Token in .env.local, never
+     committed.
    - Set provider to my tracker's name so the page credits it honestly.
 
    IF NO - the manual path:
