@@ -28,9 +28,14 @@ touch a browser when you say so. One step at a time.
    write the why lines, the pick, and the health cards - only from what you
    actually read. Push, and show me my live page with real data on it.
 
-5) Offer me the rhythm once: I can say "refresh my stocks" any time, or you
-   schedule it daily if my machine supports scheduled tasks. Never promise a
-   schedule you can't keep.
+5) Put the facts half in the cloud: copy cloud/refresh-finance.yml from the
+   tile's repo into my board at .github/workflows/, walk me through adding
+   FINNHUB_API_KEY as a repo secret (exact clicks), and push. From tomorrow
+   the prices and raw headlines refresh every morning with my laptop closed.
+
+6) Offer me the rhythm once: I say "refresh my stocks" and you read and rate
+   everything that accumulated, using THE FILTER LAW below. Be honest that
+   the judgement runs through you until the scheduled-AI drop.
 ```
 
 ---
