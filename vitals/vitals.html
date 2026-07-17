@@ -1,0 +1,1571 @@
+<!DOCTYPE html>
+<html lang="en" style="background: #04060a; color-scheme: dark;">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Vitals · Vitality</title>
+
+<!--
+  VITALS - the members tile. Pulled from Vitality:
+    app/app/vitals/VitalsDashboard.tsx  (the score page)
+    app/app/vitals/ManualEntry.tsx      (the no-wearable check-in)
+    app/app/vitals/ScoreHistory.tsx     (the scrubbable history card)
+    lib/vitals/score.ts + manualScore.ts (the engines, ported verbatim)
+    components/vitals/tierMeta.ts        (tier pips/words/colors)
+    lib/tiles/coreTiles.tsx (vitals)     (the 04 VITALS poster art)
+  CSS extracted with postcss from vitalsRemodel/manualEntry/scoreHistory
+  module css, verbatim, prefixed vr-/me-/sh-.
+
+  Deliberately absent (the app keeps them): the Signal fusion engine (needs
+  Train/Fuel/Vee data this board does not have - the feed can carry a
+  mentor-written verdict instead), the settings sheet, the per-metric
+  explainer cards, the goal card, Talk to Vee.
+
+  THE SLOT (Vitality.save/load - this tile's own state):
+    { checkins: { 'YYYY-MM-DD': { date, recovery, sleep_perf, strain,
+                                  sleep_hours, hrv, rhr } } }
+  THE FEED (the host's 'feed' message; tiles/data/vitals.json, written by the
+  wearable routine or the mentor):
+    { provider?: 'whoop'|'oura'|'manual'   defaults to 'manual'
+      sleepTarget?: hours                  defaults to 8
+      days?: [{ date:'YYYY-MM-DD', recovery, sleep_perf, hrv, rhr,
+                sleep_hours, strain }]     newest first or any order
+      verdict?: { text, emphasis?, tone?: 'accent'|'amber', lean? }
+      chips?: [{ label, qualifier, dir:'up'|'down'|'flat'|'good'|'warn' }]
+      updated?: ISO }
+  Wearable days win their date; a manual check-in fills dates the band missed.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>if(!/page/.test(location.hash)&&window.self!==window.top)document.documentElement.className+=' posterMode'</script>
+<style>
+/* next/font variables, resolved to the same faces layout.tsx loads. */
+:root { --font-serif: 'Instrument Serif'; --font-inter: 'Inter'; --font-mono: 'JetBrains Mono'; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body { background: #04060a; font-family: var(--font-inter), system-ui, sans-serif; }
+::selection { background: rgba(110, 231, 183, 0.28); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+/* the hidden attribute must beat any extracted display rule (flex/grid), or a
+   hidden element renders as an empty shell - the stale band did exactly that */
+[hidden] { display: none !important; }
+input { font: inherit; }
+
+/* ── the two layers + two views ── */
+#vposter { display: none; }
+.posterMode main { display: none !important; }
+html.posterMode { background: transparent !important; }
+.posterMode body { background: transparent !important; }
+.posterMode #vposter { display: block; position: fixed; inset: 0; overflow: hidden; }
+#vposter::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse 85% 75% at 58% 38%, rgba(110,231,183,.06), transparent 64%); }
+#vposter::after { content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  background: linear-gradient(to top, rgba(4,7,6,.6) 0%, rgba(4,7,6,.16) 22%, transparent 44%); }
+.vpArt { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
+.vpIndex { position: absolute; top: 15px; left: 20px; z-index: 6; font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: .12em; color: rgba(255,255,255,.38); }
+.vpGlyph { position: absolute; top: 13px; right: 16px; z-index: 6; width: 20px; height: 20px; color: #6EE7B7; opacity: .4; }
+.vpGlyph svg { width: 100%; height: 100%; display: block; }
+.vpLabel { position: absolute; left: 20px; bottom: 16px; z-index: 6; font-family: var(--font-serif), 'Times New Roman', Georgia, serif; font-style: italic; font-size: 22px; color: #fff; }
+.vpArrow { position: absolute; right: 18px; bottom: 17px; z-index: 6; color: #fff; opacity: .4; font-size: 14px; }
+.vpMot { fill: none; stroke: rgba(110,231,183,.92); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(110,231,183,.55)) drop-shadow(0 0 9px rgba(110,231,183,.32)); }
+.vpNode { fill: #eafff5; filter: drop-shadow(0 0 3px rgba(167,243,208,.95)) drop-shadow(0 0 7px rgba(110,231,183,.5)); }
+.vpGlow { fill: url(#vpEndpt); opacity: .9; animation: vpBreathe 5s cubic-bezier(.16,1,.3,1) infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes vpBreathe { 0%,100% { opacity: .45; transform: scale(.92); } 50% { opacity: .95; transform: scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .vpGlow { animation: none; } }
+
+/* view switching: the score page and the check-in are two screens of one tile */
+#checkinView[hidden], #scoreView[hidden] { display: none !important; }
+
+/* the check-in entry button lives in the score header (the app reaches the
+   check-in via Sources; sealed, the tile switches views instead) */
+.vr-checkinBtn { display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: .14em;
+  color: #6EE7B7; border: 1px solid rgba(110,231,183,.35); border-radius: 999px; padding: 6px 12px;
+  transition: border-color .18s, transform .18s; }
+.vr-checkinBtn:hover { border-color: rgba(110,231,183,.6); transform: translateY(-1px); }
+/* app/globals.css tokens the vitals modules resolve against, verbatim values */
+:root {
+  --mint: #6EE7B7; --mint-hover: #5dd6a6; --amber: #F59E0B; --amber-warm: #d97706;
+  --muted: rgba(255, 255, 255, 0.5); --muted-strong: rgba(255, 255, 255, 0.7);
+}
+
+
+/* ═══ app/app/vitals/vitalsRemodel.module.css (classes vr-*) ═══ */
+
+@media (min-width: 560px) {
+  .vr-sheet { align-items: center; }
+  .vr-sheetCard { border-radius: 24px; transform: translateY(24px) scale(0.97); }
+  .vr-sheet.vr-open .vr-sheetCard { transform: translateY(0) scale(1); }
+}
+@media (hover: hover) {
+  .vr-back:hover { border-color: rgba(167, 243, 208, 0.35); color: var(--tx); transform: translateX(-1px); }
+  .vr-gear:hover { border-color: rgba(167, 243, 208, 0.35); color: var(--tx); transform: rotate(35deg); }
+  .vr-help:hover { border-color: rgba(167, 243, 208, 0.35); color: var(--mint); }
+  .vr-card:hover { border-color: rgba(167, 243, 208, 0.28); background: rgba(167, 243, 208, 0.03); transform: translateY(-2px); }
+  .vr-info:hover { border-color: rgba(167, 243, 208, 0.4); color: var(--mint); }
+  .vr-vee:hover { background: var(--mint-hover); transform: translateY(-1px); box-shadow: 0 10px 24px -14px rgba(110, 231, 183, 0.4); }
+  .vr-scoredBtn:hover { color: var(--mint); }
+  .vr-sheetClose:hover { border-color: rgba(167, 243, 208, 0.35); color: var(--tx); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vr-root *,
+  .vr-root *::before,
+  .vr-root *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+  .vr-particles span { animation: none; opacity: 0.5; }
+}
+.vr-root {
+  /* preview palette */
+  --bg: #04060a;
+  --mint: #6ee7b7;
+  --mint-hover: #5dd6a6;
+  --mint-ink: #042a1c;
+  --azure: #6db4f5;
+  --azure-ink: #04121f;
+  --amber: #f59e0b;
+  --tx: #f2f6f4;
+  --tx-dim: rgba(255, 255, 255, 0.62);
+  --tx-faint: rgba(255, 255, 255, 0.36);
+  --line: rgba(167, 243, 208, 0.16);
+  --line-soft: rgba(167, 243, 208, 0.09);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --serif: var(--font-serif), 'Iowan Old Style', Georgia, serif;
+  --mono: var(--font-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --body: var(--font-inter), system-ui, sans-serif;
+  /* bridge tokens: keep the reused vitals components azure + on-brand */
+  --accent: var(--azure);
+  --accent-hi: #9cc9ff;
+  --accent-deep: #16335e;
+  --accent-hover: #8db8ff;
+  --accent-glow: rgba(109, 180, 245, 0.42);
+  --accent-ink: #04121f;
+  --card: rgba(255, 255, 255, 0.02);
+  --amber-warm: #d97706;
+  --muted: rgba(255, 255, 255, 0.5);
+  --muted-strong: rgba(255, 255, 255, 0.7);
+
+  position: relative;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+:where(.vr-root) * { box-sizing: border-box; }
+:where(.vr-root) button {
+  font: inherit; color: inherit; background: none; border: none; cursor: pointer;
+  padding: 0; -webkit-tap-highlight-color: transparent;
+}
+:where(.vr-root) svg { display: block; }
+:where(.vr-root) :focus-visible { outline: 1.5px solid var(--mint); outline-offset: 3px; border-radius: 8px; }
+.vr-atmosphere {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    radial-gradient(60% 50% at 50% 30%,
+      color-mix(in srgb, var(--mint) 16%, transparent) 0%,
+      color-mix(in srgb, var(--mint) 6%, transparent) 32%,
+      transparent 65%),
+    radial-gradient(28% 22% at 50% 38%, rgba(255, 226, 181, 0.07) 0%, rgba(255, 226, 181, 0) 70%),
+    radial-gradient(120% 80% at 50% 100%, rgba(14, 38, 30, 0.5) 0%, rgba(4, 6, 10, 0.95) 75%);
+  background-repeat: no-repeat; background-size: 100% 100%;
+}
+.vr-mountains { position: fixed; left: 0; right: 0; bottom: 0; z-index: 1; height: 30vh; min-height: 180px; pointer-events: none; opacity: 0.8; }
+.vr-mountains svg { width: 100%; height: 100%; display: block; }
+.vr-particles { position: fixed; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.vr-particles span {
+  position: absolute; border-radius: 50%;
+  background: rgba(233, 239, 233, 0.7);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--mint) 55%, transparent);
+  animation: drift linear infinite;
+}
+.vr-grain {
+  position: fixed; inset: 0; z-index: 3; pointer-events: none; opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.vr-page {
+  position: relative; z-index: 5;
+  width: min(600px, 92vw);
+  margin: 0 auto;
+  padding: calc(20px + env(safe-area-inset-top)) 0 calc(46px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 30px;
+}
+.vr-head {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  animation: riseIn 0.8s var(--ease) 0.05s both;
+}
+.vr-back {
+  justify-self: start; display: flex; align-items: center; gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02); padding: 7px 13px 7px 9px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.18em;
+  color: var(--tx-dim); text-decoration: none;
+  transition: border-color 0.3s, color 0.3s, transform 0.3s var(--ease);
+}
+.vr-back svg { width: 11px; height: 11px; stroke: var(--mint); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.vr-headTitle {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.24em;
+  text-align: center; color: var(--mint); opacity: 0.88;
+}
+.vr-headRight { justify-self: end; display: flex; align-items: center; gap: 12px; }
+.vr-headDate { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.16em; color: var(--tx-faint); white-space: nowrap; }
+.vr-gear {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex; align-items: center; justify-content: center; color: var(--tx-dim);
+  transition: border-color 0.3s, color 0.3s, transform 0.4s var(--ease);
+}
+.vr-gear svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.vr-help {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex; align-items: center; justify-content: center; color: var(--tx-dim);
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  transition: border-color 0.3s, color 0.3s;
+}
+.vr-hero {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0;
+  animation: riseIn 0.9s var(--ease) 0.14s both;
+}
+.vr-eyebrow {
+  display: flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.24em;
+  color: var(--mint); margin-bottom: 20px;
+}
+.vr-eyebrow svg { width: 12px; height: 12px; fill: var(--mint); animation: sparkGlow 3.4s var(--ease) infinite; }
+.vr-orb { position: relative; width: min(232px, 64vw); aspect-ratio: 1; margin: 0 auto; --ring-rgb: 109, 180, 245; }
+.vr-orbGlow {
+  position: absolute; inset: -12%; border-radius: 50%; pointer-events: none; z-index: 0;
+  background: radial-gradient(circle, rgba(var(--ring-rgb), 0.22), rgba(var(--ring-rgb), 0.05) 46%, transparent 70%);
+}
+.vr-orbBloom {
+  position: absolute; inset: -30%; border-radius: 50%; pointer-events: none; z-index: 0; opacity: 0;
+  background: radial-gradient(circle, rgba(110, 231, 183, 0.30), rgba(var(--ring-rgb), 0.16) 42%, transparent 68%);
+}
+.vr-orbBloom.vr-go { animation: bloom 1.15s var(--ease) forwards; }
+.vr-orb svg.vr-ring { position: relative; z-index: 1; width: 100%; height: 100%; transform: rotate(-90deg); }
+.vr-ringTrack { fill: none; stroke: rgba(255, 255, 255, 0.07); stroke-width: 9; }
+.vr-ringArc { fill: none; stroke: rgba(var(--ring-rgb), 1); stroke-width: 9; stroke-linecap: round; }
+.vr-orbCenter {
+  position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+}
+.vr-orbNum { font-family: var(--serif); font-weight: 400; font-size: clamp(58px, 15vw, 74px); line-height: 0.92; color: var(--tx); letter-spacing: -0.01em; }
+.vr-orbScale { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.2em; color: var(--tx-faint); margin-top: 5px; }
+.vr-verdict {
+  position: absolute; left: 50%; bottom: -3px; z-index: 3; transform: translateX(-50%) translateY(8px);
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid rgba(109, 180, 245, 0.5);
+  background: rgba(4, 10, 18, 0.82);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border-radius: 999px; padding: 6px 15px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.22em;
+  color: var(--azure);
+  opacity: 0; transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
+}
+.vr-verdict.vr-in { opacity: 1; transform: translateX(-50%) translateY(0); }
+.vr-verdict i { width: 5px; height: 5px; border-radius: 50%; background: var(--azure); box-shadow: 0 0 6px var(--azure); }
+.vr-verdict.vr-amber { border-color: rgba(245, 158, 11, 0.5); color: var(--amber); }
+.vr-verdict.vr-amber i { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+.vr-why {
+  font-family: var(--serif); font-weight: 400;
+  font-size: clamp(23px, 5.4vw, 29px); line-height: 1.22; letter-spacing: -0.005em;
+  color: var(--tx); max-width: 22ch; margin: 30px auto 0;
+}
+.vr-why em { font-style: italic; color: var(--mint); }
+.vr-receipt { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
+.vr-rchip {
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02); padding: 7px 13px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.13em;
+  color: var(--tx-dim); text-transform: uppercase;
+}
+.vr-rchip b { color: var(--tx); font-weight: 500; }
+.vr-rchip i { width: 5px; height: 5px; border-radius: 50%; background: var(--mint); flex-shrink: 0; box-shadow: 0 0 5px rgba(110, 231, 183, 0.6); }
+.vr-rchip svg { width: 10px; height: 10px; stroke: var(--mint); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.vr-rchip.vr-warn { border-color: rgba(245, 158, 11, 0.4); }
+.vr-rchip.vr-warn i { background: var(--amber); box-shadow: 0 0 5px rgba(245, 158, 11, 0.6); }
+.vr-rchip.vr-warn svg { stroke: var(--amber); }
+.vr-scored { margin-top: 16px; }
+.vr-scoredBtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.2em;
+  color: var(--tx-faint); text-transform: uppercase;
+  transition: color 0.3s;
+}
+.vr-scoredBtn svg { width: 9px; height: 9px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.vr-slab {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.22em;
+  color: var(--tx-faint); text-transform: uppercase;
+}
+.vr-slab::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-soft), transparent); }
+.vr-grid { animation: riseIn 0.9s var(--ease) 0.22s both; }
+.vr-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 11px; }
+.vr-card {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px 15px 15px;
+  display: flex; flex-direction: column; gap: 11px;
+  opacity: 0; animation: fadeUp 0.7s var(--ease) both;
+  transition: border-color 0.3s, transform 0.3s var(--ease), background 0.3s;
+}
+.vr-cards .vr-card:nth-child(1) { animation-delay: 0.30s; }
+.vr-cards .vr-card:nth-child(2) { animation-delay: 0.34s; }
+.vr-cards .vr-card:nth-child(3) { animation-delay: 0.38s; }
+.vr-cards .vr-card:nth-child(4) { animation-delay: 0.42s; }
+.vr-cards .vr-card:nth-child(5) { animation-delay: 0.46s; }
+.vr-cardTop { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.vr-cardLabel { font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.16em; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; line-height: 1.4; max-width: 11ch; }
+.vr-info {
+  flex-shrink: 0; width: 19px; height: 19px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; color: var(--tx-faint); line-height: 1;
+  transition: border-color 0.3s, color 0.3s;
+}
+.vr-cardVal { display: flex; align-items: baseline; gap: 5px; }
+.vr-cardVal b { font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 0.9; color: var(--tx); }
+.vr-cardVal span { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: var(--tx-dim); }
+.vr-pips { display: flex; gap: 5px; align-items: center; margin-top: auto; }
+.vr-pip { width: 100%; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.09); flex: 1; transition: background 0.4s var(--ease); }
+.vr-pip.vr-on { background: var(--tc, var(--mint)); box-shadow: 0 0 6px color-mix(in srgb, var(--tc, var(--mint)) 42%, transparent); }
+.vr-hist { animation: riseIn 0.9s var(--ease) 0.32s both; }
+.vr-goal { animation: riseIn 0.9s var(--ease) 0.42s both; }
+.vr-goalCard {
+  border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02); padding: 15px 17px;
+  display: flex; flex-direction: column; gap: 11px;
+}
+.vr-goalTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vr-goalName { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.18em; color: var(--tx-dim); text-transform: uppercase; }
+.vr-goalName svg { width: 12px; height: 12px; fill: var(--mint); flex-shrink: 0; }
+.vr-goalCount { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; color: var(--tx-faint); white-space: nowrap; }
+.vr-goalCount b { color: var(--mint); }
+.vr-goalTrack { position: relative; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.vr-goalFill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 3px;
+  background: linear-gradient(90deg, var(--mint), var(--mint-hover));
+  box-shadow: 0 0 10px rgba(110, 231, 183, 0.35);
+  transition: width 1.1s var(--ease) 0.5s;
+}
+.vr-actions {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  animation: riseIn 0.9s var(--ease) 0.5s both;
+}
+.vr-vee {
+  display: inline-flex; align-items: center; gap: 10px;
+  border-radius: 999px; padding: 13px 24px;
+  background: var(--mint); color: var(--mint-ink);
+  font-family: var(--body); font-weight: 600; font-size: 14px; letter-spacing: 0.01em;
+  box-shadow: 0 6px 18px -12px rgba(110, 231, 183, 0.28);
+  text-decoration: none;
+  animation: invite 1.6s ease-in-out infinite;
+  transition: background 0.3s, transform 0.25s var(--ease), box-shadow 0.3s;
+}
+.vr-vee svg { width: 15px; height: 15px; fill: var(--mint-ink); }
+.vr-foot {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.18em;
+  color: var(--tx-faint); text-transform: uppercase;
+}
+.vr-foot i { width: 4px; height: 4px; border-radius: 50%; background: var(--tx-faint); }
+.vr-sheet { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
+.vr-sheetBack { position: absolute; inset: 0; background: rgba(2, 4, 8, 0.66); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.35s var(--ease); }
+.vr-sheetCard {
+  position: relative; width: min(560px, 94vw);
+  background: #06090e; border: 1px solid var(--line); border-top-left-radius: 24px; border-top-right-radius: 24px;
+  box-shadow: 0 -30px 90px -30px rgba(0, 0, 0, 0.9);
+  padding: 20px 22px calc(30px + env(safe-area-inset-bottom));
+  transform: translateY(102%); opacity: 0; visibility: hidden;
+  transition: transform 0.45s var(--ease), opacity 0.35s var(--ease), visibility 0s linear 0.45s;
+}
+.vr-sheet.vr-open { pointer-events: auto; }
+.vr-sheet.vr-open .vr-sheetBack { opacity: 1; }
+.vr-sheet.vr-open .vr-sheetCard { transform: translateY(0); opacity: 1; visibility: visible; transition: transform 0.45s var(--ease), opacity 0.35s var(--ease); }
+.vr-sheetGrip { width: 38px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); margin: 0 auto 16px; }
+.vr-sheetLabel { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.2em; color: var(--tx-faint); text-transform: uppercase; }
+.vr-sheetDesc { font-size: 14px; line-height: 1.55; color: var(--tx-dim); max-width: 44ch; }
+.vr-sheetClose {
+  position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: center; color: var(--tx-dim);
+  transition: border-color 0.3s, color 0.3s;
+}
+.vr-sheetClose svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; }
+.vr-breakdown { margin-top: 18px; display: flex; flex-direction: column; gap: 13px; }
+.vr-bd { display: flex; flex-direction: column; gap: 7px; }
+.vr-bd.vr-muted { opacity: 0.5; }
+.vr-bdTop { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.vr-bdName { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.16em; color: var(--tx-dim); text-transform: uppercase; }
+.vr-bdVal { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; color: var(--tx); }
+.vr-bdTrack { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.vr-bdFill { height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--azure), #9cc9ff); box-shadow: 0 0 8px rgba(109, 180, 245, 0.35); transition: width 0.9s var(--ease); }
+.vr-bdFoot { margin-top: 16px; font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.14em; color: var(--tx-faint); text-transform: uppercase; line-height: 1.5; }
+.vr-staleBand {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px auto 0;
+  width: min(760px, 92vw);
+  padding: 13px 18px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 14px;
+  background: rgba(251, 191, 36, 0.06);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  line-height: 1.5;
+  text-decoration: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+.vr-staleBand:hover {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+.vr-staleBand svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  color: #fcd34d;
+}
+.vr-staleBand b {
+  color: #fcd34d;
+  font-weight: 600;
+}
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  10% { opacity: 0.7; }
+  90% { opacity: 0.55; }
+  100% { transform: translate3d(var(--dx, 12px), var(--dy, -100vh), 0); opacity: 0; }
+}
+@keyframes riseIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sparkGlow { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(0.86); } }
+@keyframes invite {
+  0%, 100% { box-shadow: 0 6px 18px -12px rgba(110, 231, 183, 0.28), 0 0 0 0 rgba(110, 231, 183, 0.12); }
+  50% { box-shadow: 0 6px 18px -12px rgba(110, 231, 183, 0.28), 0 0 0 6px rgba(110, 231, 183, 0); }
+}
+@keyframes bloom { 0% { opacity: 0; transform: scale(0.72); } 42% { opacity: 1; } 100% { opacity: 0; transform: scale(1.16); } }
+
+/* ═══ app/app/vitals/manualEntry.module.css (classes me-*) ═══ */
+
+
+@media (hover: hover) {
+  .me-back:hover { border-color: rgba(167, 243, 208, 0.35); color: var(--tx); transform: translateX(-1px); }
+  .me-chip:hover { border-color: rgba(167, 243, 208, 0.3); color: var(--tx); }
+  .me-step:hover { border-color: rgba(167, 243, 208, 0.35); }
+  .me-pillBtn:hover { border-color: rgba(109, 180, 245, 0.5); background: rgba(109, 180, 245, 0.06); }
+  .me-save:not(:disabled):hover { background: var(--mint-hover); transform: translateY(-1px); box-shadow: 0 10px 24px -14px rgba(110, 231, 183, 0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .me-root *, .me-root *::before, .me-root *::after {
+    animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important;
+  }
+}
+
+.me-root {
+  --bg: #04060a;
+  --mint: #6ee7b7;
+  --mint-hover: #5dd6a6;
+  --mint-ink: #042a1c;
+  --azure: #6db4f5;
+  --amber: #f59e0b;
+  --tx: #f2f6f4;
+  --tx-dim: rgba(255, 255, 255, 0.62);
+  --tx-faint: rgba(255, 255, 255, 0.36);
+  --line: rgba(167, 243, 208, 0.16);
+  --line-soft: rgba(167, 243, 208, 0.09);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --serif: var(--font-serif), 'Iowan Old Style', Georgia, serif;
+  --mono: var(--font-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --body: var(--font-inter), system-ui, sans-serif;
+
+  position: relative;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+:where(.me-root) * { box-sizing: border-box; }
+
+:where(.me-root) button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:where(.me-root) svg { display: block; }
+
+:where(.me-root) :focus-visible { outline: 1.5px solid var(--mint); outline-offset: 3px; border-radius: 8px; }
+
+.me-atmosphere {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    radial-gradient(60% 50% at 50% 30%,
+      color-mix(in srgb, var(--mint) 16%, transparent) 0%,
+      color-mix(in srgb, var(--mint) 6%, transparent) 32%,
+      transparent 65%),
+    radial-gradient(28% 22% at 50% 38%, rgba(255, 226, 181, 0.07) 0%, rgba(255, 226, 181, 0) 70%),
+    radial-gradient(120% 80% at 50% 100%, rgba(14, 38, 30, 0.5) 0%, rgba(4, 6, 10, 0.95) 75%);
+  background-repeat: no-repeat; background-size: 100% 100%;
+}
+
+.me-grain {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.me-page {
+  position: relative; z-index: 5;
+  width: min(520px, 92vw);
+  margin: 0 auto;
+  padding: calc(20px + env(safe-area-inset-top)) 0 calc(52px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 26px;
+}
+
+.me-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; animation: riseIn 0.8s var(--ease) 0.05s both; }
+
+.me-back {
+  justify-self: start; display: flex; align-items: center; gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02); padding: 7px 13px 7px 9px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.18em;
+  color: var(--tx-dim); text-decoration: none; text-transform: uppercase;
+  transition: border-color 0.3s, color 0.3s, transform 0.3s var(--ease);
+}
+
+.me-back svg { width: 11px; height: 11px; stroke: var(--mint); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.me-headTitle { font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: 0.24em; text-align: center; color: var(--mint); opacity: 0.88; text-transform: uppercase; }
+
+.me-hero { display: flex; flex-direction: column; align-items: center; text-align: center; animation: riseIn 0.9s var(--ease) 0.14s both; }
+
+.me-eyebrow { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.24em; color: var(--mint); text-transform: uppercase; margin-bottom: 14px; }
+
+.me-eyebrow svg { width: 12px; height: 12px; fill: var(--mint); animation: sparkGlow 3.4s var(--ease) infinite; }
+
+.me-title { font-family: var(--serif); font-weight: 400; font-size: clamp(28px, 7.4vw, 38px); line-height: 1.1; letter-spacing: -0.01em; color: var(--tx); max-width: 18ch; }
+
+.me-title em { font-style: italic; color: var(--mint); }
+
+.me-lede { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.16em; color: var(--tx-faint); text-transform: uppercase; margin-top: 14px; }
+
+.me-card {
+  border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 6px 18px; display: flex; flex-direction: column;
+  animation: riseIn 0.9s var(--ease) 0.22s both;
+}
+
+.me-row { display: flex; flex-direction: column; gap: 11px; padding: 17px 0; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+
+.me-row:first-child { border-top: none; }
+
+.me-rowHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+
+.me-lbl { font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.18em; color: var(--tx-dim); text-transform: uppercase; }
+
+.me-opt { font-family: var(--mono); font-size: 8px; font-weight: 500; letter-spacing: 0.16em; color: var(--tx-faint); text-transform: uppercase; }
+
+.me-chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+
+.me-chip {
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px; padding: 10px 4px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--tx-dim); text-align: center;
+  transition: border-color 0.25s, color 0.25s, background 0.25s, transform 0.25s var(--ease);
+}
+
+.me-chipOn { border-color: rgba(110, 231, 183, 0.5); color: var(--mint); background: rgba(110, 231, 183, 0.08); }
+
+.me-stepper { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.me-step {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12); color: var(--tx);
+  font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.25s, color 0.25s;
+}
+
+.me-bigNum { font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1; color: var(--tx); }
+
+.me-bigNum span { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--tx-dim); margin-left: 2px; }
+
+.me-measure { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.me-readout { font-family: var(--serif); font-weight: 400; font-size: 30px; line-height: 1; color: var(--tx); display: inline-flex; align-items: baseline; gap: 5px; }
+
+.me-readout i { font-family: var(--mono); font-style: normal; font-size: 10px; letter-spacing: 0.08em; color: var(--tx-dim); }
+
+.me-pillBtn {
+  border: 1px solid rgba(109, 180, 245, 0.32); border-radius: 999px; padding: 9px 16px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--azure); transition: border-color 0.25s, background 0.25s;
+}
+
+.me-beat {
+  flex: 1; border: 1px solid rgba(110, 231, 183, 0.4); border-radius: 12px; padding: 12px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--mint); display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+
+.me-beat i { font-family: var(--serif); font-style: normal; font-size: 22px; color: var(--mint); }
+
+.me-secs { font-family: var(--serif); font-weight: 400; font-size: 26px; color: var(--azure); min-width: 54px; }
+
+.me-num {
+  width: 92px; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02); color: var(--tx);
+  font-family: var(--serif); font-size: 22px; text-align: center;
+  -webkit-appearance: none; appearance: none;
+}
+
+.me-num::placeholder { color: var(--tx-faint); }
+
+.me-unit { font-family: var(--mono); font-size: 9px; letter-spacing: 0.1em; color: var(--tx-faint); text-transform: uppercase; }
+
+.me-saveWrap { display: flex; flex-direction: column; align-items: center; gap: 12px; animation: riseIn 0.9s var(--ease) 0.3s both; }
+
+.me-save {
+  display: inline-flex; align-items: center; gap: 10px;
+  border-radius: 999px; padding: 14px 26px;
+  background: var(--mint); color: var(--mint-ink);
+  font-family: var(--body); font-weight: 600; font-size: 14px; letter-spacing: 0.01em;
+  box-shadow: 0 6px 18px -12px rgba(110, 231, 183, 0.4);
+  transition: background 0.3s, transform 0.25s var(--ease), box-shadow 0.3s, opacity 0.25s;
+}
+
+.me-save svg { width: 15px; height: 15px; stroke: var(--mint-ink); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+.me-save:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
+
+.me-hint { font-family: var(--mono); font-size: 8.5px; font-weight: 500; letter-spacing: 0.16em; color: var(--tx-faint); text-transform: uppercase; text-align: center; max-width: 34ch; line-height: 1.6; }
+
+.me-hint.me-err { color: var(--amber); }
+
+@keyframes riseIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+
+@keyframes sparkGlow { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.6; transform: scale(0.86); } }
+
+/* ═══ app/app/vitals/scoreHistory.module.css (classes sh-*) ═══ */
+
+@media (max-width: 680px) { .sh-card { padding: var(--space-5, 1.25rem); } }
+@media (max-width: 680px) { .sh-minis { grid-template-columns: 1fr 1fr; } }
+.sh-card { border: 1px solid var(--border); border-radius: 18px; padding: var(--space-6, 1.5rem) var(--space-8, 2rem) var(--space-8, 2rem); background: var(--card); }
+.sh-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+.sh-lead { display: flex; flex-direction: column; gap: 3px; }
+.sh-eyb { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
+.sh-big { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 1.85rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.sh-sub { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.sh-sub b { color: var(--muted-strong); font-weight: 500; }
+.sh-range { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: 11px; padding: 3px; }
+.sh-range button { font-family: var(--font-mono, monospace); font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: none; border: none; padding: 6px 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.sh-range button.sh-on { background: rgba(94, 155, 255, 0.14); color: var(--accent); }
+.sh-graph { position: relative; height: 168px; touch-action: none; cursor: crosshair; user-select: none; }
+.sh-graph svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sh-gridLabel { position: absolute; right: 0; transform: translateY(-50%); font-family: var(--font-mono, monospace); font-size: 0.56rem; color: var(--muted); background: rgba(8, 10, 14, 0.6); padding: 1px 5px; border-radius: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.sh-scrubLine { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, 0.18); pointer-events: none; transition: opacity 0.12s; }
+.sh-scrubDot { position: absolute; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 0 4px rgba(94, 155, 255, 0.16); }
+.sh-scrubTag { position: absolute; transform: translate(-50%, calc(-100% - 14px)); white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.12s; background: #0c1018; border: 1px solid var(--border-strong); border-radius: 10px; padding: 7px 11px; display: flex; flex-direction: column; gap: 3px; }
+.sh-scrubTag.sh-show { opacity: 1; }
+.sh-stDate { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 0.8rem; color: var(--muted); }
+.sh-stRow { display: flex; align-items: baseline; gap: 8px; }
+.sh-stScore { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 1.35rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.sh-stTier { font-family: var(--font-mono, monospace); font-size: 0.54rem; letter-spacing: 0.1em; text-transform: uppercase; }
+.sh-stDelta { font-family: var(--font-mono, monospace); font-size: 0.58rem; letter-spacing: 0.04em; margin-top: 1px; }
+.sh-stats { display: flex; gap: 8px; margin-top: 18px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 0; }
+.sh-stat { flex: 1; text-align: center; display: flex; flex-direction: column; gap: 3px; }
+.sh-stat .sh-lbl { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.sh-stat .sh-val { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.sh-minis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+.sh-hm { border: 1px solid var(--border); border-radius: 13px; padding: 12px 13px; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 255, 255, 0.012); min-height: 74px; }
+.sh-hmTop { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.sh-hmName { font-family: var(--font-mono, monospace); font-size: 0.56rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.sh-hmVal { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.sh-hmVal small { font-style: normal; font-family: var(--font-mono, monospace); font-size: 0.56rem; color: var(--muted); margin-left: 2px; }
+.sh-hm svg { display: block; width: 100%; height: 30px; }
+.sh-empty { font-family: var(--font-serif, Georgia, serif); font-style: italic; font-size: 1.05rem; color: var(--muted); text-align: center; padding: 36px 0; }
+
+</style>
+</head>
+<body>
+
+<!-- The poster face. lib/tiles/coreTiles.tsx (vitals): index 04, the heartbeat
+     line, the wandering orb node, serif Vitals. Art SVG verbatim. -->
+<div id="vposter" aria-hidden="true">
+  <span class="vpIndex">04</span>
+  <span class="vpGlyph"><svg viewBox="-12 -12 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M-10 0 L-5 0 L-2 -7 L2 7 L5 0 L10 0" /></svg></span>
+  <svg class="vpArt" viewBox="0 0 210 118">
+    <defs>
+      <radialGradient id="vpEndpt">
+        <stop offset="0%" stop-color="#dcffeb" stop-opacity=".95" />
+        <stop offset="40%" stop-color="#a7f3d0" stop-opacity=".4" />
+        <stop offset="100%" stop-color="#6EE7B7" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <path class="vpMot" d="M38 47 L74 47 L89 27 L104 70 L119 47 L172 47" />
+    <g transform="translate(104 70)"><circle class="vpGlow" r="8" /><circle class="vpNode" r="3.2" /></g>
+  </svg>
+  <span class="vpLabel">Vitals</span>
+  <span class="vpArrow">→</span>
+</div>
+
+<main>
+
+<!-- ════ the score page (VitalsDashboard) ════ -->
+<div id="scoreView" class="vr-root">
+  <a class="vr-staleBand" id="staleBand" role="alert" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 12h6M10.5 7.5H7a4.5 4.5 0 0 0 0 9h3.5M13.5 7.5H17a4.5 4.5 0 0 1 0 9h-3.5" />
+    </svg>
+    <span id="staleText"></span>
+  </a>
+
+  <div class="vr-atmosphere" aria-hidden="true"></div>
+  <div class="vr-mountains" aria-hidden="true">
+    <svg viewBox="0 0 1600 420" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="vrMtFar" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0d1a17" stop-opacity="0" />
+          <stop offset="55%" stop-color="#0d1a17" stop-opacity=".55" />
+          <stop offset="100%" stop-color="#0d1a17" stop-opacity=".95" />
+        </linearGradient>
+        <linearGradient id="vrMtNear" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#050a09" stop-opacity=".4" />
+          <stop offset="60%" stop-color="#050a09" stop-opacity=".95" />
+          <stop offset="100%" stop-color="#050a09" stop-opacity="1" />
+        </linearGradient>
+      </defs>
+      <path d="M0,300 L120,230 L210,260 L320,180 L430,220 L560,150 L680,210 L820,170 L960,220 L1100,180 L1240,240 L1380,200 L1500,250 L1600,220 L1600,420 L0,420 Z" fill="url(#vrMtFar)" />
+      <path d="M0,360 L100,320 L220,340 L340,290 L460,330 L590,300 L720,340 L860,310 L1000,350 L1140,310 L1280,355 L1420,320 L1540,360 L1600,340 L1600,420 L0,420 Z" fill="url(#vrMtNear)" />
+    </svg>
+  </div>
+  <div class="vr-particles" id="vrParticles" aria-hidden="true"></div>
+  <div class="vr-grain" aria-hidden="true"></div>
+
+  <main class="vr-page">
+    <header class="vr-head">
+      <button type="button" class="vr-checkinBtn" id="toCheckin">＋ CHECK-IN</button>
+      <div class="vr-headTitle">VITALS</div>
+      <div class="vr-headRight">
+        <span class="vr-headDate" id="headDate"></span>
+      </div>
+    </header>
+
+    <section class="vr-hero">
+      <div class="vr-eyebrow">
+        <svg viewBox="0 0 24 24"><path d="M12 2 L13.6 8.4 L20 10 L13.6 11.6 L12 18 L10.4 11.6 L4 10 L10.4 8.4 Z" /></svg>
+        VITALITY · TODAY
+      </div>
+
+      <div class="vr-orb" id="orb">
+        <div class="vr-orbBloom" id="orbBloom" aria-hidden="true"></div>
+        <div class="vr-orbGlow"></div>
+        <svg class="vr-ring" viewBox="0 0 200 200">
+          <circle class="vr-ringTrack" cx="100" cy="100" r="84" />
+          <circle class="vr-ringArc" id="ringArc" cx="100" cy="100" r="84" />
+        </svg>
+        <div class="vr-orbCenter">
+          <div class="vr-orbNum" id="orbNum">—</div>
+          <div class="vr-orbScale">OUT OF 100</div>
+        </div>
+        <div class="vr-verdict" id="verdictPill" hidden><i></i><span id="verdictWord"></span></div>
+      </div>
+
+      <p class="vr-why" id="whyLine">Here is your day.</p>
+
+      <div class="vr-receipt" id="receipt" hidden></div>
+
+      <div class="vr-scored" id="scoredWrap" hidden>
+        <button type="button" class="vr-scoredBtn" id="openSheet" aria-haspopup="dialog">
+          HOW IT'S SCORED
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+        </button>
+      </div>
+    </section>
+
+    <section class="vr-grid" id="numbersSection" hidden>
+      <div class="vr-slab">Today’s numbers</div>
+      <div class="vr-cards" id="cards"></div>
+    </section>
+
+    <section class="vr-hist" id="histSection" hidden>
+      <div class="vr-slab">Score history</div>
+      <div class="sh-card" id="histCard"></div>
+    </section>
+
+    <section class="vr-actions">
+      <div class="vr-foot" id="foot"></div>
+    </section>
+  </main>
+
+  <div class="vr-sheet" id="sheet" aria-hidden="true">
+    <div class="vr-sheetBack" id="sheetBack"></div>
+    <div class="vr-sheetCard" role="dialog" aria-modal="true" aria-label="How it's scored">
+      <button type="button" class="vr-sheetClose" id="sheetClose" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+      <div class="vr-sheetGrip"></div>
+      <div class="vr-sheetLabel">How it’s scored</div>
+      <p class="vr-sheetDesc" style="margin-top: 9px">
+        Your Vitals score blends your daily signals into one 0 to 100 read of how ready your body is. It refreshes each morning from last night’s data.
+      </p>
+      <div class="vr-breakdown" id="breakdown"></div>
+      <div class="vr-bdFoot">Recovery and sleep carry the most weight</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ the check-in (ManualEntry) ════ -->
+<div id="checkinView" class="me-root" hidden>
+  <div class="me-atmosphere" aria-hidden="true"></div>
+  <div class="me-grain" aria-hidden="true"></div>
+
+  <div class="me-page">
+    <header class="me-head">
+      <button type="button" class="me-back" id="toScore">
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" /></svg>
+        vitals
+      </button>
+      <span class="me-headTitle">Vitals</span>
+      <span></span>
+    </header>
+
+    <section class="me-hero">
+      <div class="me-eyebrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 L13.6 8.4 L20 10 L13.6 11.6 L12 18 L10.4 11.6 L4 10 L10.4 8.4 Z" fill="currentColor" /></svg> Daily check-in</div>
+      <h1 class="me-title">How did you <em>sleep</em>?</h1>
+      <div class="me-lede">Fill what you know. I score the rest.</div>
+    </section>
+
+    <div class="me-card">
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">Sleep</span></div>
+        <div class="me-stepper">
+          <button type="button" class="me-step" id="sleepMinus" aria-label="15 minutes less sleep">-</button>
+          <span class="me-bigNum" id="sleepNum">--</span>
+          <button type="button" class="me-step" id="sleepPlus" aria-label="15 minutes more sleep">+</button>
+        </div>
+      </div>
+
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">Restful?</span></div>
+        <div class="me-chips" id="scaleRestful"></div>
+      </div>
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">Feel</span></div>
+        <div class="me-chips" id="scaleFeel"></div>
+      </div>
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">Effort</span></div>
+        <div class="me-chips" id="scaleEffort"></div>
+      </div>
+
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">Resting HR</span><span class="me-opt">Optional</span></div>
+        <div class="me-measure" id="pulseIdle">
+          <span class="me-readout" id="rhrReadout">--<i>bpm</i></span>
+          <button type="button" class="me-pillBtn" id="pulseStart">Measure</button>
+        </div>
+        <div class="me-measure" id="pulseLive" hidden>
+          <span class="me-secs" id="pulseSecs">15s</span>
+          <button type="button" class="me-beat" id="pulseBeat" aria-label="tap each beat">Tap each beat<i id="pulseCount">0</i></button>
+        </div>
+      </div>
+
+      <div class="me-row">
+        <div class="me-rowHead"><span class="me-lbl">HRV</span><span class="me-opt">Optional</span></div>
+        <div class="me-measure">
+          <input type="number" inputmode="numeric" class="me-num" id="hrvInput" placeholder="--" min="1" max="400" aria-label="heart-rate variability in milliseconds" />
+          <span class="me-unit">ms</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="me-saveWrap">
+      <button type="button" class="me-save" id="saveBtn" disabled>
+        Save to Vitals
+        <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+      </button>
+      <span class="me-hint" id="saveHint">Feeds your Vitals score and today’s numbers.</span>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// --- the Vitality bridge (the shipped contract, verbatim) --------------------
+var Vitality={_w:{},_sv:false,save:function(d){Vitality._sv=true;parent.postMessage({source:'vitality-tile',type:'save',data:d},'*')},load:function(){return new Promise(function(res){var id=Math.random().toString(36).slice(2);var ask=function(){parent.postMessage({source:'vitality-tile',type:'load',id:id},'*')};var n=0;var t=setInterval(function(){n++;if(n===1){ask();return}clearInterval(t);if(Vitality._w[id]){Vitality._w[id]=function(d){if(d!=null&&!Vitality._sv)location.reload()};res(null)}},3000);Vitality._w[id]=function(d){clearInterval(t);res(d)};ask()})},report:function(s){parent.postMessage({source:'vitality-tile',type:'report',stream:s},'*')}};
+function vNote(t){var n=document.getElementById('v-note');if(!n){n=document.createElement('div');n.id='v-note';n.style.cssText='margin-top:10px;font-size:12px;color:#F59E0B;text-align:center';document.body.appendChild(n)}n.textContent=t}
+function todayKey(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+
+var FEED = {}
+window.addEventListener('message', function (e) {
+  var m = e.data
+  if (!m || m.source !== 'vitality-host') return
+  if (m.type === 'load:result' && Vitality._w[m.id]) { Vitality._w[m.id](m.data); delete Vitality._w[m.id]; return }
+  if (m.type === 'feed') { FEED = (m.data && typeof m.data === 'object') ? m.data : {}; renderScore(); return }
+  if (m.type === 'save:error') { vNote('That save did not stick. Try again in a moment.') }
+  else if (m.type === 'report:error') { vNote('That log did not land, so it does not count yet. Try again in a moment.') }
+})
+
+// Standalone (opened directly, no host): localStorage fallback so the file
+// runs anywhere. Sealed frames never take this branch.
+if (window.self === window.top) {
+  window.Vitality = {
+    save: function (d) { try { localStorage.setItem('v:vitals', JSON.stringify(d)) } catch (e) {} return Promise.resolve(true) },
+    load: function () { try { return Promise.resolve(JSON.parse(localStorage.getItem('v:vitals') || 'null')) } catch (e) { return Promise.resolve(null) } },
+    report: function () {},
+  }
+}
+
+// =============================================================================
+// lib/vitals/score.ts - ported verbatim (types dropped, logic identical)
+// =============================================================================
+var clamp = function (n, lo, hi) { if (lo == null) lo = 0; if (hi == null) hi = 100; return Math.max(lo, Math.min(hi, n)) }
+var round = Math.round
+
+var TIER_MIN = [
+  { min: 85, tier: 'peak' }, { min: 70, tier: 'strong' }, { min: 55, tier: 'steady' },
+  { min: 40, tier: 'low' }, { min: 0, tier: 'needs-care' },
+]
+function tierForScore(score) { for (var i = 0; i < TIER_MIN.length; i++) if (score >= TIER_MIN[i].min) return TIER_MIN[i].tier; return 'needs-care' }
+
+function hrvScoreW(hrv, baseline) {
+  if (hrv == null || baseline == null || baseline <= 0) return null
+  return clamp(round(50 + ((hrv - baseline) / baseline) * 150))
+}
+function rhrScoreW(rhr, baseline) {
+  if (rhr == null || baseline == null || baseline <= 0) return null
+  return clamp(round(50 + ((baseline - rhr) / baseline) * 200))
+}
+function strainScoreW(strain, recovery) {
+  if (strain == null || recovery == null) return null
+  var target = 4 + (clamp(recovery) / 100) * 14
+  var diff = strain - target
+  var penalty = diff >= 0 ? (diff / 18) * 120 : (-diff / 18) * 70
+  return clamp(round(100 - penalty))
+}
+function subDefs(input) {
+  var target = input.sleepTarget || 8
+  return [
+    { key: 'recovery', label: 'Recovery', weight: 0.3, personal: false,
+      score: input.recovery == null ? null : clamp(round(input.recovery)) },
+    { key: 'sleep_perf', label: 'Sleep performance', weight: 0.2, personal: false,
+      score: input.sleepPerf == null ? null : clamp(round(input.sleepPerf)) },
+    { key: 'hrv', label: 'HRV vs baseline', weight: 0.15, personal: true,
+      score: hrvScoreW(input.hrv, input.hrvBaseline) },
+    { key: 'rhr', label: 'RHR vs baseline', weight: 0.15, personal: true,
+      score: rhrScoreW(input.rhr, input.rhrBaseline) },
+    { key: 'sleep_hours', label: 'Sleep hours', weight: 0.1, personal: false,
+      score: input.sleepHours == null ? null : clamp(round((input.sleepHours / target) * 100)) },
+    { key: 'strain', label: 'Strain balance', weight: 0.1, personal: false,
+      score: strainScoreW(input.strain, input.recovery) },
+  ]
+}
+function computeVitalsScore(input) {
+  var defs = subDefs(input)
+  var present = defs.filter(function (d) { return d.score != null })
+  if (present.length === 0) return null
+  var totalWeight = present.reduce(function (a, d) { return a + d.weight }, 0)
+  var weighted = present.reduce(function (a, d) { return a + d.score * d.weight }, 0)
+  var score = round(weighted / totalWeight)
+  var subs = defs.map(function (d) {
+    var o = {}; for (var k in d) o[k] = d[k]
+    o.tier = d.score == null ? null : tierForScore(d.score)
+    return o
+  })
+  return {
+    score: score, tier: tierForScore(score), subs: subs, confidence: totalWeight,
+    missing: defs.filter(function (d) { return d.score == null }).map(function (d) { return d.label }),
+  }
+}
+function computeBaselines(rows) {
+  var mean = function (xs) { return xs.length ? round(xs.reduce(function (a, b) { return a + b }, 0) / xs.length) : null }
+  return {
+    hrv: mean(rows.map(function (r) { return r.hrv }).filter(function (n) { return n != null })),
+    rhr: mean(rows.map(function (r) { return r.rhr }).filter(function (n) { return n != null })),
+  }
+}
+function computeScoreSeries(rows, baselines, sleepTarget) {
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i]
+    var v = computeVitalsScore({
+      recovery: r.recovery, sleepPerf: r.sleep_perf, hrv: r.hrv, rhr: r.rhr,
+      sleepHours: r.sleep_hours, strain: r.strain,
+      hrvBaseline: baselines.hrv, rhrBaseline: baselines.rhr, sleepTarget: sleepTarget,
+    })
+    if (v) out.push({ date: r.date, score: v.score, tier: v.tier })
+  }
+  return out
+}
+
+// =============================================================================
+// lib/vitals/manualScore.ts - ported verbatim
+// =============================================================================
+var round1 = function (n) { return Math.round(n * 10) / 10 }
+function scale5(v) { if (v == null) return null; return clamp(((v - 1) / 4) * 100) }
+function blend(parts) {
+  var present = parts.filter(function (p) { return p.score != null })
+  if (present.length === 0) return null
+  var totalWeight = present.reduce(function (a, p) { return a + p.weight }, 0)
+  var weighted = present.reduce(function (a, p) { return a + p.score * p.weight }, 0)
+  return round(weighted / totalWeight)
+}
+function deriveSleepPerf(input) {
+  var need = input.sleepNeed > 0 ? input.sleepNeed : 8
+  var hoursScore = input.sleepHours == null ? null : clamp(round((input.sleepHours / need) * 100))
+  return blend([
+    { score: hoursScore, weight: 0.6 },
+    { score: scale5(input.sleepQuality), weight: 0.4 },
+  ])
+}
+function deriveRecovery(input, sleepPerf) {
+  return blend([
+    { score: hrvScoreW(input.hrv, input.hrvBaseline), weight: 0.35 },
+    { score: sleepPerf, weight: 0.25 },
+    { score: rhrScoreW(input.rhr, input.rhrBaseline), weight: 0.2 },
+    { score: scale5(input.feel), weight: 0.2 },
+  ])
+}
+function deriveStrain(input) {
+  if (input.exertion == null) return null
+  return round1(clamp(((input.exertion - 1) / 4) * 21, 0, 21))
+}
+function deriveManualMetrics(input) {
+  var sleepPerf = deriveSleepPerf(input)
+  return { recovery: deriveRecovery(input, sleepPerf), sleepPerf: sleepPerf, strain: deriveStrain(input) }
+}
+
+// =============================================================================
+// components/vitals/tierMeta.ts + VitalsDashboard constants - verbatim
+// =============================================================================
+var TIER_PIPS = { 'needs-care': 1, low: 2, steady: 3, strong: 4, peak: 5 }
+var TIER_WORD = { 'needs-care': 'needs care', low: 'low', steady: 'steady', strong: 'strong', peak: 'peak' }
+var TIER_COLOR = { 'needs-care': 'var(--amber-warm)', low: 'var(--amber)', steady: 'var(--muted-strong)', strong: 'var(--accent)', peak: 'var(--mint)' }
+var RING_RGB = { 'needs-care': '217,119,6', low: '245,158,11', steady: '186,196,205', strong: '109,180,245', peak: '110,231,183' }
+var FALLBACK = {
+  peak: { text: 'You are running at your peak today.', word: 'peak' },
+  strong: { text: 'A strong reading. Your body is in a good place.', word: 'strong' },
+  steady: { text: 'A steady, workable day.', word: 'steady' },
+  low: { text: 'Running a little low today. Ease in.', word: 'low' },
+  'needs-care': { text: 'Your body is asking for rest today.', word: 'rest' },
+}
+var CARD_LABEL = { Sleep: 'Sleep performance', HRV: 'Heart rate variability', 'Resting HR': 'Resting heart rate', Strain: 'Day strain', 'Time asleep': 'Time asleep' }
+var METRIC_SUB = { Sleep: 'sleep_perf', HRV: 'hrv', 'Resting HR': 'rhr', Strain: 'strain', 'Time asleep': 'sleep_hours' }
+var PROVIDER_LABEL = { whoop: 'WHOOP', oura: 'Oura', manual: 'your check-ins' }
+var R_ORB = 84, C_ORB = 2 * Math.PI * R_ORB
+
+function fmtDate(d) {
+  var p = d.split('-').map(Number)
+  if (!p[0] || !p[1] || !p[2]) return d
+  return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
+
+/** Wrap the first matching keyword in an <em> (the serif-mint emphasis). */
+function emphHtml(text, words) {
+  var lower = text.toLowerCase()
+  for (var i = 0; i < (words || []).length; i++) {
+    var w = words[i]
+    var at = lower.indexOf(String(w).toLowerCase())
+    if (at >= 0) return esc(text.slice(0, at)) + '<em>' + esc(text.slice(at, at + w.length)) + '</em>' + esc(text.slice(at + w.length))
+  }
+  return esc(text)
+}
+
+// =============================================================================
+// state + the merged day list
+// =============================================================================
+var store = { checkins: {} }
+
+/** Wearable days win their date; manual check-ins fill the dates the band
+ *  missed. Newest first (rows[0] = latest), like the app's server rows. */
+function mergedRows() {
+  var byDate = {}
+  var days = Array.isArray(FEED.days) ? FEED.days : []
+  Object.keys(store.checkins || {}).forEach(function (d) { byDate[d] = store.checkins[d] })
+  days.forEach(function (r) { if (r && r.date) byDate[r.date] = r })
+  return Object.keys(byDate).sort().reverse().map(function (d) {
+    var r = byDate[d]
+    return {
+      date: d,
+      recovery: r.recovery != null ? Number(r.recovery) : null,
+      sleep_perf: r.sleep_perf != null ? Number(r.sleep_perf) : null,
+      hrv: r.hrv != null ? Number(r.hrv) : null,
+      rhr: r.rhr != null ? Number(r.rhr) : null,
+      sleep_hours: r.sleep_hours != null ? Number(r.sleep_hours) : null,
+      strain: r.strain != null ? Number(r.strain) : null,
+    }
+  })
+}
+
+// =============================================================================
+// the score page
+// =============================================================================
+var $ = function (id) { return document.getElementById(id) }
+var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+var lastReported = null
+
+function renderScore() {
+  var rows = mergedRows()
+  var provider = FEED.provider || 'manual'
+  var sleepTarget = Number(FEED.sleepTarget) > 0 ? Number(FEED.sleepTarget) : 8
+
+  if (!rows.length) {
+    $('orbNum').textContent = '—'
+    $('ringArc').style.strokeDasharray = C_ORB
+    $('ringArc').style.strokeDashoffset = C_ORB
+    $('whyLine').textContent = 'No readings yet. Check in once and your score starts here.'
+    $('headDate').textContent = ''
+    $('numbersSection').hidden = true
+    $('histSection').hidden = true
+    $('scoredWrap').hidden = true
+    $('receipt').hidden = true
+    $('verdictPill').hidden = true
+    $('staleBand').hidden = true
+    $('foot').innerHTML = 'NO DATA YET<i></i>THE CHECK-IN IS THE START'
+    return
+  }
+
+  var latest = rows[0]
+  var baselines = computeBaselines(rows.slice(0, 30))
+  var vs = computeVitalsScore({
+    recovery: latest.recovery, sleepPerf: latest.sleep_perf, hrv: latest.hrv, rhr: latest.rhr,
+    sleepHours: latest.sleep_hours, strain: latest.strain,
+    hrvBaseline: baselines.hrv, rhrBaseline: baselines.rhr, sleepTarget: sleepTarget,
+  })
+  var score = vs ? vs.score : null
+  var tier = vs ? vs.tier : null
+  var ringRgb = tier ? RING_RGB[tier] : '186,196,205'
+
+  $('headDate').textContent = fmtDate(latest.date).toUpperCase()
+
+  // ── the orb: count-up + arc sweep (VitalsDashboard's animation, sans bloom
+  //    particles; one soft bloom class only). Reduced motion lands instantly.
+  var arc = $('ringArc'), num = $('orbNum')
+  arc.style.strokeDasharray = C_ORB
+  arc.style.stroke = 'rgba(' + ringRgb + ',1)'
+  if (score == null) {
+    num.textContent = '—'
+    arc.style.strokeDashoffset = C_ORB
+  } else if (reduceMotion) {
+    num.textContent = String(score)
+    arc.style.strokeDashoffset = C_ORB * (1 - score / 100)
+  } else {
+    var t0 = null
+    var stepFn = function (ts) {
+      if (t0 == null) t0 = ts
+      var e = Math.min(1, (ts - t0) / 900)
+      var ease = 1 - Math.pow(1 - e, 3)
+      num.textContent = String(Math.round(score * ease))
+      arc.style.strokeDashoffset = C_ORB * (1 - (score * ease) / 100)
+      if (e < 1) requestAnimationFrame(stepFn)
+      else $('orbBloom').classList.add('vr-go')
+    }
+    requestAnimationFrame(stepFn)
+  }
+
+  // ── verdict: the feed's mentor-written line wins; else the tier fallback.
+  //    (The app's Signal engine fuses Train/Fuel/Vee, which this board does
+  //    not have - so the mentor is the signal here, or the tier speaks.)
+  var v = FEED.verdict && FEED.verdict.text ? FEED.verdict : null
+  if (v && v.lean) {
+    $('verdictPill').hidden = false
+    $('verdictPill').className = 'vr-verdict vr-in' + (v.tone === 'amber' ? ' vr-amber' : '')
+    $('verdictWord').textContent = String(v.lean).toUpperCase()
+  } else { $('verdictPill').hidden = true }
+  var whyWords = v ? (v.emphasis ? [v.emphasis] : []) : (tier ? [FALLBACK[tier].word] : [])
+  var whyText = v ? v.text : (tier ? FALLBACK[tier].text : 'Here is your day.')
+  $('whyLine').innerHTML = emphHtml(whyText, whyWords)
+
+  // ── receipt chips, only from the feed (never invented)
+  var chips = Array.isArray(FEED.chips) ? FEED.chips : []
+  if (chips.length) {
+    $('receipt').hidden = false
+    $('receipt').innerHTML = chips.map(function (c) {
+      var warn = c.dir === 'warn' || c.dir === 'down'
+      var glyph = c.dir === 'up' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V6M6 12l6-6 6 6" /></svg>'
+        : c.dir === 'down' ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v13M6 12l6 6 6-6" /></svg>' : '<i></i>'
+      return '<span class="vr-rchip' + (warn ? ' vr-warn' : '') + '">' + glyph + '<b>' + esc(c.label || '') + '</b>' +
+        (c.qualifier ? '<span>' + esc(c.qualifier) + '</span>' : '') + '</span>'
+    }).join('')
+  } else { $('receipt').hidden = true }
+
+  // ── today's numbers (self-hide any null metric)
+  var defs = []
+  if (latest.sleep_perf != null) defs.push({ name: 'Sleep', big: String(Math.round(latest.sleep_perf)), unit: '%' })
+  if (latest.hrv != null) defs.push({ name: 'HRV', big: String(Math.round(latest.hrv)), unit: 'ms' })
+  if (latest.rhr != null) defs.push({ name: 'Resting HR', big: String(Math.round(latest.rhr)), unit: 'bpm' })
+  if (latest.strain != null) defs.push({ name: 'Strain', big: latest.strain.toFixed(1), unit: '/ 21' })
+  if (latest.sleep_hours != null) {
+    var h = Math.floor(latest.sleep_hours), m = Math.round((latest.sleep_hours - h) * 60)
+    if (m >= 60) { h += 1; m -= 60 }
+    defs.push({ name: 'Time asleep', big: h + 'h', unit: m + 'm' })
+  }
+  if (defs.length) {
+    $('numbersSection').hidden = false
+    $('cards').innerHTML = defs.map(function (mdef) {
+      var sub = vs ? vs.subs.filter(function (s) { return s.key === METRIC_SUB[mdef.name] })[0] : null
+      var t = sub && sub.score != null ? tierForScore(sub.score) : null
+      var pips = ''
+      if (t) {
+        pips = '<div class="vr-pips" style="--tc:' + TIER_COLOR[t] + '" aria-hidden="true">' +
+          [1, 2, 3, 4, 5].map(function (i) { return '<span class="vr-pip' + (i <= TIER_PIPS[t] ? ' vr-on' : '') + '"></span>' }).join('') + '</div>'
+      }
+      return '<div class="vr-card"><div class="vr-cardTop"><div class="vr-cardLabel">' + esc(CARD_LABEL[mdef.name] || mdef.name) + '</div></div>' +
+        '<div class="vr-cardVal"><b>' + esc(mdef.big) + '</b>' + (mdef.unit ? '<span>' + esc(mdef.unit) + '</span>' : '') + '</div>' + pips + '</div>'
+    }).join('')
+  } else { $('numbersSection').hidden = true }
+
+  // ── the breakdown sheet
+  if (vs) {
+    $('scoredWrap').hidden = false
+    $('breakdown').innerHTML = vs.subs.map(function (s) {
+      return '<div class="vr-bd' + (s.score == null ? ' vr-muted' : '') + '"><div class="vr-bdTop">' +
+        '<span class="vr-bdName">' + esc(s.label) + '</span><span class="vr-bdVal">' + Math.round(s.weight * 100) + '%</span></div>' +
+        '<div class="vr-bdTrack"><div class="vr-bdFill" data-w="' + (s.score == null ? 0 : s.score) + '" style="width:0%"></div></div></div>'
+    }).join('')
+  } else { $('scoredWrap').hidden = true }
+
+  // ── the stale-link guard (2+ local days = a broken promise, in calm amber).
+  //    Sealed tiles have no OAuth to relaunch; the cure is the mentor.
+  var staleDays = 0
+  if (provider !== 'manual' && latest.date) {
+    var then = Date.parse(latest.date + 'T00:00:00')
+    if (!isNaN(then)) {
+      var now = new Date(); now.setHours(0, 0, 0, 0)
+      staleDays = Math.round((now.getTime() - then) / 86400000)
+    }
+  }
+  if (staleDays >= 2) {
+    $('staleBand').hidden = false
+    $('staleText').innerHTML = '<b>Your ' + esc(PROVIDER_LABEL[provider] || provider) + ' link went quiet ' + staleDays +
+      ' days ago.</b> Ask your mentor to refresh vitals and your readings catch up.'
+  } else { $('staleBand').hidden = true }
+
+  // ── history
+  var seriesOldest = computeScoreSeries(rows.slice().reverse(), baselines, sleepTarget)
+  var series = seriesOldest.slice().reverse() // newest first, like the app hands over
+  if (series.length > 0) { $('histSection').hidden = false; renderHistory(series, rows) }
+  else { $('histSection').hidden = true }
+
+  $('foot').innerHTML = 'DATA BY ' + esc((PROVIDER_LABEL[provider] || provider).toUpperCase()) + '<i></i>' + esc(fmtDate(latest.date).toUpperCase())
+
+  // ── the tile's one honest number: today's score into the ledger (an x in
+  //    the equation). One call site; a re-render of the same day replaces it.
+  if (score != null && latest.date === todayKey() && lastReported !== latest.date + ':' + score) {
+    lastReported = latest.date + ':' + score
+    Vitality.report({ key: 'vitals', label: 'Vitals', value: score, date: latest.date, kind: 'measure', goalDirection: 'up' })
+  }
+}
+
+// =============================================================================
+// the history card (ScoreHistory, ported)
+// =============================================================================
+var WINS = [
+  { k: '7', label: '7D', n: 7 }, { k: '30', label: '30D', n: 30 },
+  { k: '90', label: '3M', n: 90 }, { k: 'all', label: 'All', n: Infinity },
+]
+var RANGE_LABEL = { '7': '7 days', '30': '30 days', '90': '3 months', all: 'all time' }
+var GW = 320, GH = 88, GP = 12
+var histState = { winK: '7', scrub: null, series: [], history: [] }
+
+function renderHistory(series, history) {
+  histState.series = series
+  histState.history = history
+  drawHistory()
+}
+
+function drawHistory() {
+  var st = histState
+  var ordered = st.series.slice().reverse() // oldest -> newest
+  var n = WINS.filter(function (w) { return w.k === st.winK })[0].n
+  var pts = n === Infinity ? ordered : ordered.slice(-n)
+  var el = $('histCard')
+
+  var vals = pts.map(function (p) { return p.score })
+  var avg = pts.length ? Math.round(vals.reduce(function (a, b) { return a + b }, 0) / pts.length) : 0
+
+  var head = '<div class="sh-top"><div class="sh-lead"><span class="sh-eyb">Average</span>' +
+    '<span class="sh-big">' + (avg || '—') + '</span>' +
+    '<span class="sh-sub">vitals score · <b>' + RANGE_LABEL[st.winK] + '</b></span></div>' +
+    '<div class="sh-range">' + WINS.map(function (w) {
+      return '<button type="button" data-win="' + w.k + '"' + (st.winK === w.k ? ' class="sh-on"' : '') + '>' + w.label + '</button>'
+    }).join('') + '</div></div>'
+
+  if (pts.length < 2) {
+    el.innerHTML = head + '<div class="sh-empty">Log a couple more days and your line starts here.</div>'
+    wireHistButtons()
+    return
+  }
+
+  var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals)
+  var lo = Math.floor(mn / 5) * 5
+  var hi = Math.max(lo + 5, Math.ceil(mx / 5) * 5)
+  var mid = Math.round((lo + hi) / 2)
+  var xF = function (i) { return pts.length < 2 ? GW / 2 : GP + (GW - 2 * GP) * (i / (pts.length - 1)) }
+  var yF = function (v) { return GP + (GH - 2 * GP) * (1 - (v - lo) / (hi - lo || 1)) }
+  var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + xF(i).toFixed(1) + ' ' + yF(p.score).toFixed(1) }).join(' ')
+  var areaD = line + ' L' + xF(pts.length - 1).toFixed(1) + ' ' + GH + ' L' + xF(0).toFixed(1) + ' ' + GH + ' Z'
+
+  var best = mx
+  var trend = pts.length > 1 ? pts[pts.length - 1].score - pts[0].score : 0
+  var activeI = st.scrub != null ? st.scrub : pts.length - 1
+  var cur = pts[activeI]
+  var curTier = cur ? tierForScore(cur.score) : 'steady'
+  var prev = activeI > 0 ? pts[activeI - 1] : null
+  var delta = cur && prev ? cur.score - prev.score : null
+  var showTag = st.scrub != null && cur != null
+  var tagLeft = cur ? Math.max(13, Math.min(87, (xF(activeI) / GW) * 100)) : 50
+
+  var gridLines = [hi, mid, lo].map(function (vv) {
+    return '<line x1="0" y1="' + yF(vv).toFixed(1) + '" x2="320" y2="' + yF(vv).toFixed(1) + '" stroke="rgba(255,255,255,.07)" stroke-width="1" vector-effect="non-scaling-stroke" />'
+  }).join('')
+  var gridLabels = [hi, mid, lo].map(function (vv) {
+    return '<span class="sh-gridLabel" style="top:' + ((yF(vv) / GH) * 100) + '%">' + vv + '</span>'
+  }).join('')
+
+  var graph = '<div class="sh-graph" id="shGraph">' +
+    '<svg viewBox="0 0 320 88" preserveAspectRatio="none">' +
+    '<defs><linearGradient id="schg" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.22" /><stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />' +
+    '</linearGradient></defs>' + gridLines +
+    '<path d="' + areaD + '" fill="url(#schg)" />' +
+    '<path d="' + line + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />' +
+    '</svg>' + gridLabels +
+    '<span class="sh-scrubLine" style="left:' + ((xF(activeI) / GW) * 100) + '%;opacity:' + (showTag ? 1 : 0) + '"></span>' +
+    (cur ? '<span class="sh-scrubDot" style="left:' + ((xF(activeI) / GW) * 100) + '%;top:' + ((yF(cur.score) / GH) * 100) + '%;background:' + TIER_COLOR[curTier] + '"></span>' : '') +
+    (cur ? '<span class="sh-scrubTag' + (showTag ? ' sh-show' : '') + '" style="left:' + tagLeft + '%;top:' + ((yF(cur.score) / GH) * 100) + '%">' +
+      '<span class="sh-stDate">' + esc(fmtDate(cur.date)) + '</span>' +
+      '<span class="sh-stRow"><span class="sh-stScore" style="color:' + TIER_COLOR[curTier] + '">' + cur.score + '</span>' +
+      '<span class="sh-stTier" style="color:' + TIER_COLOR[curTier] + '">' + TIER_WORD[curTier] + '</span></span>' +
+      (delta != null ? '<span class="sh-stDelta" style="color:' + (delta > 0 ? 'var(--accent)' : delta < 0 ? 'var(--amber)' : 'var(--muted)') + '">' +
+        (delta > 0 ? '▲ +' + delta : delta < 0 ? '▼ ' + delta : '— level') + ' from day before</span>' : '') +
+      '</span>' : '') +
+    '</div>'
+
+  var stats = '<div class="sh-stats">' +
+    '<div class="sh-stat"><span class="sh-lbl">Trend</span><span class="sh-val" style="color:' + (trend > 0 ? 'var(--accent)' : trend < 0 ? 'var(--amber)' : 'var(--muted-strong)') + '">' + (trend > 0 ? '▲ +' + trend : trend < 0 ? '▼ ' + trend : '— 0') + '</span></div>' +
+    '<div class="sh-stat"><span class="sh-lbl">Best</span><span class="sh-val" style="color:var(--mint)">' + best + '</span></div>' +
+    '<div class="sh-stat"><span class="sh-lbl">Logged</span><span class="sh-val">' + pts.length + (n === Infinity ? ' days' : ' / ' + n) + '</span></div></div>'
+
+  // metric mini-trends from the raw rows
+  var orderedH = st.history.slice().reverse()
+  var hWin = n === Infinity ? orderedH : orderedH.slice(-Math.min(n, 30))
+  var minis = [
+    { name: 'Recovery', unit: '', get: function (r) { return r.recovery } },
+    { name: 'Sleep', unit: '%', get: function (r) { return r.sleep_perf } },
+    { name: 'HRV', unit: 'ms', get: function (r) { return r.hrv } },
+    { name: 'Strain', unit: '', get: function (r) { return r.strain } },
+  ].map(function (mm) {
+    var values = hWin.map(mm.get).filter(function (x) { return x != null })
+    var last = values.length ? values[values.length - 1] : null
+    var body = ''
+    if (values.length >= 2) {
+      var mmn = Math.min.apply(null, values), mmx = Math.max.apply(null, values)
+      var mxF = function (i) { return 3 + (120 - 6) * (i / (values.length - 1)) }
+      var myF = function (vv) { return 27 - (vv - mmn) / (mmx - mmn || 1) * 24 }
+      var d = values.map(function (vv, i) { return (i ? 'L' : 'M') + mxF(i).toFixed(1) + ' ' + myF(vv).toFixed(1) }).join(' ')
+      body = '<svg viewBox="0 0 120 30" preserveAspectRatio="none">' +
+        '<path d="' + d + '" fill="none" stroke="rgba(94,155,255,.55)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />' +
+        '<circle cx="' + mxF(values.length - 1).toFixed(1) + '" cy="' + myF(values[values.length - 1]).toFixed(1) + '" r="2" fill="var(--accent-hi)" /></svg>'
+    }
+    return '<div class="sh-hm"><div class="sh-hmTop"><span class="sh-hmName">' + mm.name + '</span>' +
+      '<span class="sh-hmVal">' + (last == null ? '—' : Math.round(last)) + '<small>' + mm.unit + '</small></span></div>' + body + '</div>'
+  }).join('')
+
+  el.innerHTML = head + graph + stats + '<div class="sh-minis">' + minis + '</div>'
+  wireHistButtons()
+
+  var g = $('shGraph')
+  if (g) {
+    var onMove = function (clientX) {
+      if (pts.length < 2) return
+      var r = g.getBoundingClientRect()
+      var f = Math.max(0, Math.min(1, (clientX - r.left) / r.width))
+      histState.scrub = Math.round(f * (pts.length - 1))
+      drawHistory()
+    }
+    g.addEventListener('pointerdown', function (e) { g.setPointerCapture(e.pointerId); onMove(e.clientX) })
+    g.addEventListener('pointermove', function (e) { if (e.buttons || e.pointerType === 'mouse') onMove(e.clientX) })
+    g.addEventListener('pointerleave', function () { histState.scrub = null; drawHistory() })
+    g.addEventListener('pointerup', function () { histState.scrub = null; drawHistory() })
+  }
+}
+function wireHistButtons() {
+  Array.prototype.forEach.call(document.querySelectorAll('.sh-range button'), function (b) {
+    b.addEventListener('click', function () { histState.winK = b.getAttribute('data-win'); histState.scrub = null; drawHistory() })
+  })
+}
+
+// =============================================================================
+// the sheet
+// =============================================================================
+function openSheet() {
+  $('sheet').classList.add('vr-open')
+  $('sheet').setAttribute('aria-hidden', 'false')
+  requestAnimationFrame(function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.vr-bdFill'), function (f) {
+      f.style.width = f.getAttribute('data-w') + '%'
+    })
+  })
+}
+function closeSheet() {
+  $('sheet').classList.remove('vr-open')
+  $('sheet').setAttribute('aria-hidden', 'true')
+  Array.prototype.forEach.call(document.querySelectorAll('.vr-bdFill'), function (f) { f.style.width = '0%' })
+}
+$('openSheet').addEventListener('click', openSheet)
+$('sheetClose').addEventListener('click', closeSheet)
+$('sheetBack').addEventListener('click', closeSheet)
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheet() })
+
+// =============================================================================
+// the check-in (ManualEntry, ported; save goes through the bridge)
+// =============================================================================
+var RESTFUL = ['Rough', 'Light', 'OK', 'Solid', 'Deep']
+var FEEL = ['Wrecked', 'Rough', 'OK', 'Good', 'Amazing']
+var EFFORT = ['Rest', 'Easy', 'Moderate', 'Hard', 'Max']
+var PULSE_SECONDS = 15
+var SLEEP_NEED = 8
+var ci = { sleepHours: null, sleepQuality: null, feel: null, exertion: null, rhr: null, hrv: null }
+
+function fmtHM(hours) {
+  if (hours == null) return '--'
+  var h = Math.floor(hours), m = Math.round((hours - h) * 60)
+  if (m === 60) { h += 1; m = 0 }
+  return m ? h + 'h ' + m + 'm' : h + 'h'
+}
+function ciFilled() { return ci.sleepHours != null || ci.sleepQuality != null || ci.feel != null || ci.exertion != null || ci.rhr != null || ci.hrv != null }
+function ciSync() {
+  $('sleepNum').textContent = fmtHM(ci.sleepHours)
+  $('rhrReadout').innerHTML = (ci.rhr != null ? ci.rhr : '--') + '<i>bpm</i>'
+  $('pulseStart').textContent = ci.rhr != null ? 'Re-measure' : 'Measure'
+  $('saveBtn').disabled = !ciFilled()
+}
+function renderScale(id, words, key) {
+  $(id).innerHTML = words.map(function (w, i) {
+    var v = i + 1
+    return '<button type="button" class="me-chip' + (ci[key] === v ? ' me-chipOn' : '') + '" data-v="' + v + '" aria-pressed="' + (ci[key] === v) + '">' + w + '</button>'
+  }).join('')
+  Array.prototype.forEach.call($(id).querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () { ci[key] = Number(b.getAttribute('data-v')); renderScale(id, words, key); ciSync() })
+  })
+}
+$('sleepMinus').addEventListener('click', function () {
+  ci.sleepHours = Math.round(Math.max(0, Math.min(16, (ci.sleepHours == null ? SLEEP_NEED : ci.sleepHours) - 0.25)) * 60) / 60; ciSync()
+})
+$('sleepPlus').addEventListener('click', function () {
+  ci.sleepHours = Math.round(Math.max(0, Math.min(16, (ci.sleepHours == null ? SLEEP_NEED : ci.sleepHours) + 0.25)) * 60) / 60; ciSync()
+})
+$('hrvInput').addEventListener('input', function () {
+  var n = $('hrvInput').value === '' ? null : Math.round(Number($('hrvInput').value))
+  ci.hrv = n != null && isFinite(n) ? n : null
+  ciSync()
+})
+
+// resting HR by guided pulse count: tap Measure, tap each beat for 15s, bpm = beats x 4
+var pulse = { counting: false, secs: PULSE_SECONDS, beats: 0, timer: null }
+$('pulseStart').addEventListener('click', function () {
+  pulse.counting = true; pulse.secs = PULSE_SECONDS; pulse.beats = 0
+  $('pulseIdle').hidden = true; $('pulseLive').hidden = false
+  $('pulseSecs').textContent = pulse.secs + 's'; $('pulseCount').textContent = '0'
+  pulse.timer = setInterval(function () {
+    pulse.secs -= 1
+    if (pulse.secs <= 0) {
+      clearInterval(pulse.timer); pulse.counting = false
+      var bpm = pulse.beats * (60 / PULSE_SECONDS)
+      if (bpm > 0) ci.rhr = Math.round(bpm)
+      $('pulseIdle').hidden = false; $('pulseLive').hidden = true
+      ciSync()
+      return
+    }
+    $('pulseSecs').textContent = pulse.secs + 's'
+  }, 1000)
+})
+$('pulseBeat').addEventListener('click', function () { pulse.beats += 1; $('pulseCount').textContent = String(pulse.beats) })
+
+$('saveBtn').addEventListener('click', function () {
+  if (!ciFilled()) return
+  // HRV/RHR join Recovery only once a personal baseline exists (~3 prior days
+  // with a value), mirroring the app's server-side baseline behavior.
+  var prior = mergedRows().filter(function (r) { return r.date < todayKey() })
+  var withHrv = prior.filter(function (r) { return r.hrv != null })
+  var withRhr = prior.filter(function (r) { return r.rhr != null })
+  var b = computeBaselines(prior.slice(0, 30))
+  var metrics = deriveManualMetrics({
+    sleepHours: ci.sleepHours, sleepQuality: ci.sleepQuality, feel: ci.feel,
+    hrv: ci.hrv, rhr: ci.rhr, exertion: ci.exertion,
+    hrvBaseline: withHrv.length >= 3 ? b.hrv : null,
+    rhrBaseline: withRhr.length >= 3 ? b.rhr : null,
+    sleepNeed: SLEEP_NEED,
+  })
+  store.checkins = store.checkins || {}
+  store.checkins[todayKey()] = {
+    date: todayKey(),
+    recovery: metrics.recovery, sleep_perf: metrics.sleepPerf, strain: metrics.strain,
+    sleep_hours: ci.sleepHours, hrv: ci.hrv, rhr: ci.rhr,
+  }
+  Vitality.save(store)
+  $('saveHint').textContent = 'Saved.'
+  showScore()
+  renderScore()
+})
+
+// =============================================================================
+// view switching + particles + boot
+// =============================================================================
+function showScore() { $('checkinView').hidden = true; $('scoreView').hidden = false }
+function showCheckin() {
+  ciSync()
+  renderScale('scaleRestful', RESTFUL, 'sleepQuality')
+  renderScale('scaleFeel', FEEL, 'feel')
+  renderScale('scaleEffort', EFFORT, 'exertion')
+  $('scoreView').hidden = true; $('checkinView').hidden = false
+}
+$('toCheckin').addEventListener('click', showCheckin)
+$('toScore').addEventListener('click', showScore)
+
+// atmosphere particles (VitalsDashboard's drift field, same random spread)
+;(function () {
+  var root = $('vrParticles')
+  if (!root || reduceMotion) return
+  for (var i = 0; i < 26; i++) {
+    var s = document.createElement('span')
+    s.style.left = (Math.random() * 100) + '%'
+    s.style.top = (60 + Math.random() * 40) + '%'
+    var size = 1.2 + Math.random() * 1.2
+    s.style.width = s.style.height = size + 'px'
+    var d = 22 + Math.random() * 28
+    s.style.animationDuration = d + 's'
+    s.style.animationDelay = (-Math.random() * d) + 's'
+    s.style.setProperty('--dx', (Math.random() * 30 - 15) + 'px')
+    s.style.setProperty('--dy', '-' + (60 + Math.random() * 50) + 'vh')
+    root.appendChild(s)
+  }
+})()
+
+Vitality.load().then(function (d) {
+  if (d && typeof d === 'object' && d.checkins) store = d
+  renderScore()
+}).catch(function () { renderScore() })
+
+</script>
+</body>
+</html>

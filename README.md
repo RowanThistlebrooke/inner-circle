@@ -6,6 +6,9 @@ teaches by hand.
 
 - `finance-stocks/` — the finance routine: setup, the daily refresh, THE
   FILTER LAW, the pick and health rules.
+- `vitals/` — drop #2: the body on the board. The sealed Vitals tile itself
+  (members only — score, verdict, check-in, history) + the routine that wires
+  a wearable or sets up the manual path.
 
 Members only. The free half of every drop lives in the public episode repos.
 
