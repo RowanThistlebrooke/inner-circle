@@ -1,0 +1,21 @@
+# The doorman: pay on Whop -> IC role -> post your GitHub username in
+# #github-access -> this workflow invites you to the repo. Every 10 minutes,
+# laptop closed. Secrets: DISCORD_BOT_TOKEN + GH_PAT (fine-grained, this repo,
+# Administration: write).
+name: grant-access
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+jobs:
+  doorman:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node automation/grant-access.mjs
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
