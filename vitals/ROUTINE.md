@@ -10,8 +10,18 @@ repo (`vitals/vitals.html`): members only.
 ## The one prompt (paste this)
 
 ```
-Run the vitals routine on my board. Do everything yourself; my hands only
-touch a browser when you say so. One step at a time.
+Run the vitals routine for me. Do everything yourself; my hands only touch
+a browser when you say so. One step at a time. I might be a total beginner.
+
+0) First, look at what I have, and route me - don't ask me to know:
+   - EMPTY FOLDER (no board at all): plant the seed first -
+     npx --yes degit rowanthistlebrooke/seed . --force - read CLAUDE.md, run
+     the seed setup (name, board local, live if I want), THEN continue below.
+   - A SEED BOARD (index.html + lib/tiles/registry.js exist): continue below.
+   - MY OWN dashboard or site (something else entirely): the tile runs
+     standalone - fetch vitals.html, open it directly or embed it my way; it
+     saves in my browser. Tell me plainly what the seed board would add
+     (the vault, the feed, the equation) and leave the choice to me.
 
 1) Install the vitals tile from the inner-circle repo
    (github.com/rowanthistlebrooke/inner-circle, vitals/vitals.html) into
