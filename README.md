@@ -10,7 +10,10 @@ teaches by hand.
   (members only — score, verdict, check-in, history) + the routine that wires
   a wearable or sets up the manual path.
 
-Members only. The free half of every drop lives in the public episode repos.
+Public, like everything else - the paywall was never the files. The Inner
+Circle (the paid room) sells what a file can't carry: help tonight, drops
+first, done-for-you setup, and the room itself. This repo is the shelf those
+drops live on.
 
 Naming note: "vault" always means the USER'S vault - their ledger, equation
-and context on their own board. This repo is the Inner Circle: the routines.
+and context on their own board. This repo is the Inner Circle's shelf: the routines.
