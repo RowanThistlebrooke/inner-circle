@@ -13,7 +13,7 @@ source, and the board grows from what the data is.
 ## The formula
 
 ```
-SOURCE      any API / OAuth (patreon, whoop, youtube, stripe, coinbase...)
+SOURCE      any API / OAuth (whoop, youtube, stripe, coinbase, strava...)
   |  adapter   ~60 lines, runs on YOUR machine, the key never leaves .env.local
 SHAPE       tiles/data/<source>.json  - the contract {hero, series, ...}
   |  host      hands the feed to the sealed tile (a tile never fetches)
@@ -35,8 +35,8 @@ question at a time. Do everything yourself; my hands only touch a browser when
 you say so. I might be a total beginner.
 
 0) INTERVIEW (ask these before building anything):
-   a) "What do you want on your board?" (e.g. Instagram followers, Patreon
-      income, YouTube views, Stripe revenue, my WHOOP recovery)
+   a) "What do you want on your board?" (e.g. Instagram followers,
+      YouTube views, my WHOOP recovery, my crypto, my subs)
    b) Work out the source yourself. Then check .env.local: if I already have a
       key/token for it, say so and skip to step 2.
    c) If I don't, say "I'll get you set up" and figure out the auth type
@@ -79,7 +79,6 @@ first. The key ALWAYS lands in `.env.local`, never in the tile, never committed.
 | **Finnhub** (stocks) | finnhub.io, free signup, copy the key | 2 min |
 | **Oura** (readiness) | cloud.ouraring.com, Personal Access Token, create | 2 min |
 | **CoinGecko** (crypto) | no key at all | 0 |
-| **Patreon** (income) | patreon.com/portal, register client, copy Creator's Access Token | 3 min |
 | **YouTube** (channel) | console.cloud.google.com, enable YouTube Data API v3, create API key | 5 min |
 | **Stripe** (revenue) | dashboard.stripe.com, Developers, API keys, copy the restricted read key | 3 min |
 | **WHOOP** (recovery) | own dev app + one OAuth handshake - see the vitals API.md | 10 min |
