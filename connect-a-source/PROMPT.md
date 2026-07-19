@@ -5,7 +5,6 @@ tested before it lands. The dashboard is made OF your data - you connect a
 source, and the board grows from what the data is.
 
 - `PROMPT.md` (this file) - paste the block below to your mentor.
-- `patreon.html` + `refresh-patreon.mjs` - the worked example (real income tile).
 - `../looks/` - the parts bin every tile composes from (verbatim jade).
 - `../build-your-own-tile/check-tile.mjs` - the gate.
 
@@ -99,5 +98,5 @@ by construction. If your mentor ever types a color, a font, or a card style
 from its head instead of pasting a look, stop it: that is how a knockoff is
 born. Paste the part. The pixels are already jade.
 
-See `patreon.html` for a complete worked example: air + card + hero + curve,
-bound to real Patreon revenue, gated green.
+Your data stays yours. The tile is private to your board; nothing about your
+numbers ever leaves your machine or lands in a public repo.
