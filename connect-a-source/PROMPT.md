@@ -4,6 +4,11 @@ Turn any API or account into a tile on your board, in the real jade design,
 tested before it lands. The dashboard is made OF your data - you connect a
 source, and the board grows from what the data is.
 
+**This is the LIVE-DATA path: it connects through an API, OAuth, or a token,
+so the tile refreshes itself.** For a tile you fill in by hand (a habit, a
+count, a mood) with no keys, use the build-your-own-tile prompt instead. This
+one is for a source that has data to pull.
+
 - `PROMPT.md` (this file) - paste the block below to your mentor.
 - `../looks/` - the parts bin every tile composes from (verbatim jade).
 - `../build-your-own-tile/check-tile.mjs` - the gate.
