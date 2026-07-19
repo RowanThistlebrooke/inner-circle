@@ -1,0 +1,47 @@
+/* looks/tokens.css - jade's palette + type tokens, verbatim. The looks resolve against these. */
+:root {
+  --mint: #6EE7B7; --mint-hover: #5dd6a6; --amber: #F59E0B; --amber-warm: #d97706;
+  --muted: rgba(255,255,255,0.5); --muted-strong: rgba(255,255,255,0.7);
+}
+
+/* the vitals page tokens, promoted to :root so a composed tile resolves them */
+:root {
+  /* preview palette */
+  --bg: #04060a;
+  --mint: #6ee7b7;
+  --mint-hover: #5dd6a6;
+  --mint-ink: #042a1c;
+  --azure: #6db4f5;
+  --azure-ink: #04121f;
+  --amber: #f59e0b;
+  --tx: #f2f6f4;
+  --tx-dim: rgba(255, 255, 255, 0.62);
+  --tx-faint: rgba(255, 255, 255, 0.36);
+  --line: rgba(167, 243, 208, 0.16);
+  --line-soft: rgba(167, 243, 208, 0.09);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --serif: var(--font-serif), 'Iowan Old Style', Georgia, serif;
+  --mono: var(--font-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+  --body: var(--font-inter), system-ui, sans-serif;
+  /* bridge tokens: keep the reused vitals components azure + on-brand */
+  --accent: var(--azure);
+  --accent-hi: #9cc9ff;
+  --accent-deep: #16335e;
+  --accent-hover: #8db8ff;
+  --accent-glow: rgba(109, 180, 245, 0.42);
+  --accent-ink: #04121f;
+  --card: rgba(255, 255, 255, 0.02);
+  --amber-warm: #d97706;
+  --muted: rgba(255, 255, 255, 0.5);
+  --muted-strong: rgba(255, 255, 255, 0.7);
+
+  position: relative;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}

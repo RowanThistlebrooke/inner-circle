@@ -1,0 +1,4 @@
+/* looks/hero.css - the serif hero number, verbatim from jade's vitals orb. Needs fonts+tokens.
+   Use class 'hero' on the ONE big number that matters. */
+.hero { font-family: var(--serif); font-weight: 400; font-size: clamp(58px, 15vw, 74px); line-height: 0.92; color: var(--tx); letter-spacing: -0.01em; }
+.hero small { font-family: var(--font-mono); font-size: 14px; color: var(--muted); letter-spacing: .04em; }

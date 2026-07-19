@@ -1,0 +1,22 @@
+<!-- looks/curve.html - peak's real energy curve LOOK: mint area + glowing stroke.
+     Verbatim gradients and glow filter from app/app/peak/CurveChart.tsx.
+     USAGE (in your tile): put these defs inside your chart svg, then draw two
+     paths - the area path filled with url(the peak-area gradient) and the line
+     path stroked with url(the peak-stroke gradient) using the peak-line-glow
+     filter. Your JS builds the path geometry; only the LOOK lives here.
+     Namespace the ids per chart if you draw more than one. -->
+<defs>
+  <linearGradient id="peak-area" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0%" stop-color="#6EE7B7" stop-opacity="0.45" />
+    <stop offset="100%" stop-color="#6EE7B7" stop-opacity="0" />
+  </linearGradient>
+  <linearGradient id="peak-stroke" x1="0" x2="0" y1="0" y2="1">
+    <stop offset="0%" stop-color="#d4fce8" stop-opacity="1" />
+    <stop offset="60%" stop-color="#6EE7B7" stop-opacity="1" />
+    <stop offset="100%" stop-color="#6EE7B7" stop-opacity="0.95" />
+  </linearGradient>
+  <filter id="peak-line-glow" x="-20%" y="-20%" width="140%" height="140%">
+    <feGaussianBlur stdDeviation="6" result="b" />
+    <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+  </filter>
+</defs>

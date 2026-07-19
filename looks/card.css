@@ -1,0 +1,13 @@
+/* looks/card.css - jade's real card, verbatim. Needs tokens. Use class 'card'.
+   Ships its own fadeUp keyframe (jade defines it elsewhere); without it the
+   card's `opacity:0; animation:...both` would leave the card invisible. */
+.card {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 14px 15px 15px;
+  display: flex; flex-direction: column; gap: 11px;
+  opacity: 0; animation: fadeUp 0.7s var(--ease) both;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; } }
