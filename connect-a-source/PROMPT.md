@@ -56,12 +56,32 @@ you say so. I might be a total beginner.
    shape in the tile's header comment. Facts only - never invent a number.
 
 2) The tile: tiles/<source>.html, COMPOSED from github.com/rowanthistlebrooke/
-   inner-circle looks/ - paste the parts VERBATIM (fonts + tokens first, then
-   the looks you want: air, card, hero, curve), then only layout + data
-   binding. NEVER freehand a jade look from memory; that is the one way this
-   goes wrong. Two layers: a compact poster on the grid, the full page on tap
-   (page: true). ONE Vitality.report() with the headline number. Honest empty
-   states.
+   inner-circle looks/ - FETCH those raw files and paste them VERBATIM. Do not
+   write them from memory, do not paraphrase them, do not "use the same idea".
+   Fetch in this order:
+     raw.githubusercontent.com/RowanThistlebrooke/inner-circle/main/looks/fonts.html
+     .../looks/tokens.css        <- the palette. always.
+     .../looks/atmosphere.css    <- MANDATORY on the page face. see below.
+     .../looks/card.css .../looks/hero.css .../looks/curve.html  <- as needed
+   then only layout + data binding on top.
+
+   THE ATMOSPHERE IS NOT OPTIONAL. A tile without looks/atmosphere.css is a
+   flat black page with boxes on it - the single most common way a generated
+   tile comes out wrong. In the grid the tile stays transparent (the board
+   paints behind it); on its own full page there is no board, so the tile must
+   carry the sky itself: body needs position:relative, then both body::before
+   and body::after pasted verbatim from atmosphere.css.
+
+   Two layers: a compact poster on the grid, the full page on tap (page: true).
+   ONE Vitality.report() with the headline number. Honest empty states.
+
+   SELF-CHECK before you show me anything - answer these out loud:
+     - did I FETCH the looks files, or did I write CSS from memory?  (fetch)
+     - does body::before AND body::after exist in the file?          (both)
+     - if my feed has a series, does a real curve draw from it?      (yes)
+     - open the page face: is there a jade glow at the top and
+       mountains at the bottom, or is it flat black?                 (glow)
+   Any "no" means it is not done. Fix it before it touches my board.
 
 3) Backtest: node check-tile.mjs tiles/<source>.html - fix until 0 errors.
    A red result never lands on my board; you fix and re-run.
