@@ -1,0 +1,30 @@
+/* looks/atmosphere.css - the jade backdrop, verbatim from the finance page.
+   THIS IS WHAT MAKES A TILE LOOK LIKE VITALITY. Without it a tile reads as a
+   flat black page with boxes on it - correct data, wrong world.
+
+   Where it belongs: the FULL-PAGE face of a tile (the one the host opens on
+   tap, url carries '#page'). In the GRID the tile stays transparent and the
+   board paints behind it; on its own page there is no board, so the tile
+   carries the sky itself.
+
+   Needs: body { position: relative }. Paste both rules verbatim, never freehand. */
+
+body::before {
+  content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(58% 44% at 50% -6%, rgba(110,231,183,.13), transparent 62%),
+    radial-gradient(1.5px 1.5px at 14% 16%, rgba(255,255,255,.5), transparent 100%),
+    radial-gradient(1px 1px at 76% 10%, rgba(255,255,255,.4), transparent 100%),
+    radial-gradient(1.5px 1.5px at 52% 6%, rgba(255,255,255,.32), transparent 100%),
+    radial-gradient(1px 1px at 30% 28%, rgba(255,255,255,.28), transparent 100%);
+}
+body::after {
+  content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 32vh;
+  z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(8,19,14,.85), transparent 80%),
+    linear-gradient(115deg, transparent 42%, rgba(13,26,23,.75) 43%, rgba(13,26,23,.75) 58%, transparent 59%),
+    linear-gradient(245deg, transparent 38%, rgba(10,18,16,.9) 39%, rgba(10,18,16,.9) 62%, transparent 63%);
+  -webkit-mask-image: linear-gradient(to top,#000 55%,transparent);
+  mask-image: linear-gradient(to top,#000 55%,transparent);
+}
